@@ -79,8 +79,12 @@ const activeMicrosandboxSessionHandles = new Map<
   string,
   SandboxProviderHandle<NetworkPolicySandboxSession>
 >();
+const inFlightMicrosandboxTemplatePreparations = new Map<
+  string,
+  Promise<MicrosandboxPreparedArtifact>
+>();
 
-export async function prewarmMicrosandboxTemplate(input: {
+type MicrosandboxTemplatePreparationInput = {
   readonly providerName: string;
   readonly options: ResolvedMicrosandboxOptions;
   readonly optionsHash: string;
@@ -90,7 +94,34 @@ export async function prewarmMicrosandboxTemplate(input: {
     sandbox: import("#shared/sandbox-session.js").SandboxSession,
   ) => Promise<void> | void;
   readonly templateKey: string;
-}): Promise<MicrosandboxPreparedArtifact> {
+};
+
+export function prewarmMicrosandboxTemplate(
+  input: MicrosandboxTemplatePreparationInput,
+): Promise<MicrosandboxPreparedArtifact> {
+  const preparationKey = [
+    input.providerName,
+    input.context.storagePath,
+    input.templateKey,
+    input.optionsHash,
+  ].join("\0");
+  const pending = inFlightMicrosandboxTemplatePreparations.get(preparationKey);
+  if (pending !== undefined) return pending;
+
+  const preparation = prepareMicrosandboxTemplate(input);
+  inFlightMicrosandboxTemplatePreparations.set(preparationKey, preparation);
+  const clearPending = () => {
+    if (inFlightMicrosandboxTemplatePreparations.get(preparationKey) === preparation) {
+      inFlightMicrosandboxTemplatePreparations.delete(preparationKey);
+    }
+  };
+  void preparation.then(clearPending, clearPending);
+  return preparation;
+}
+
+async function prepareMicrosandboxTemplate(
+  input: MicrosandboxTemplatePreparationInput,
+): Promise<MicrosandboxPreparedArtifact> {
   input.context.log?.("loading microsandbox runtime");
   const module = await loadMicrosandboxModule({
     host: input.context.host,
