@@ -592,6 +592,29 @@ describe("EveAgentStore agent-session following", () => {
     expect(childText(store.snapshot.conversation)).toBe("Filed.");
   });
 
+  it("reopens the root session stream when reattached after a settled turn", async () => {
+    const events = turnEvents();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(startedResponse())
+      .mockResolvedValueOnce(boundedStreamResponse(events));
+    const store = createStore({ reducer: defaultMessageReducer() });
+
+    await store.send({ message: "Hello" });
+    const streamRequestsAfterSend = fetchMock.mock.calls.filter(
+      ([, init]) => init?.method !== "POST",
+    ).length;
+    expect(streamRequestsAfterSend).toBe(1);
+
+    detachEveAgentStore(store);
+    attachEveAgentStore(store);
+
+    await vi.waitFor(() => {
+      const streamRequests = fetchMock.mock.calls.filter(([, init]) => init?.method !== "POST");
+      expect(streamRequests.length).toBeGreaterThan(streamRequestsAfterSend);
+    });
+  });
+
   it("records agent sessions without subscribing when following is disabled", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     const store = childStore(researcherCall(), false);

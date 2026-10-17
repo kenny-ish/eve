@@ -402,6 +402,14 @@ export class EveAgentStore<TData> {
   [attachStore](): void {
     this.#attached = true;
     if (this.#followChildStreams && !this.#conversationClient.following) this.#followSubagents();
+    if (
+      this.#session !== undefined &&
+      this.#followIdle &&
+      this.#activeTurn === undefined &&
+      isSettledSessionTail(this.#events, this.#conversationClient.conversation)
+    ) {
+      void this.resume().catch(() => {});
+    }
     if (this.#autoPrewarm && this.#session === undefined) void this.prewarm().catch(() => {});
   }
 
